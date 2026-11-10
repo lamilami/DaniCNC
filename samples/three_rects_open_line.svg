@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Критерий Задача 2: три правоъгълника (затворени) и една отворена линия -->
+<svg xmlns="http://www.w3.org/2000/svg" width="220mm" height="140mm" viewBox="0 0 220 140">
+  <!-- 1: <rect> 100 x 50 mm, периметър 300 mm -->
+  <rect id="A" x="10" y="10" width="100" height="50" fill="none" stroke="black"/>
+  <!-- 2: path със Z, 60 x 40 mm, периметър 200 mm -->
+  <path id="B" d="M 130 10 h 60 v 40 h -60 Z" fill="none" stroke="black"/>
+  <!-- 3: polygon, вложен в група с transform, 80 x 30 mm, периметър 220 mm -->
+  <g transform="translate(10,80)">
+    <polygon id="C" points="0,0 80,0 80,30 0,30" fill="none" stroke="black"/>
+  </g>
+  <!-- 4: отворена начупена линия: 40 + 30 + 40 = 110 mm -->
+  <polyline id="D" points="120,80 160,80 160,110 200,110" fill="none" stroke="black"/>
+</svg>

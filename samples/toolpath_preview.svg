@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180mm" height="100mm" viewBox="0 0 180 100">
+  <rect id="rectangle40x30" x="10" y="10" width="40" height="30" fill="none" stroke="black"/>
+  <path id="ring" d="M70 10 H110 V40 H70 Z M85 20 H95 V30 H85 Z" fill="none" stroke="black"/>
+  <line id="openLine" x1="10" y1="60" x2="50" y2="70" stroke="black"/>
+  <rect id="tooNarrow" x="70" y="60" width="40" height="5" fill="none" stroke="black"/>
+  <path id="narrowNeck" d="M120 10 H140 V18 H155 V10 H175 V30 H155 V22 H140 V30 H120 Z" fill="none" stroke="black"/>
+</svg>
