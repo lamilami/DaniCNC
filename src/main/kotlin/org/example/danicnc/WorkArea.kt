@@ -67,6 +67,7 @@ class WorkArea : Pane() {
     private var ty = 0.0
 
     private var drawing: SvgDrawing? = null
+    val projectDrawing: SvgDrawing? get() = drawing
     var previewResult = PreviewResult()
         private set
     var previewVisible = true

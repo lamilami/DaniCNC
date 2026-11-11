@@ -27,16 +27,12 @@ object ToolpathPreview {
             val first = group.first()
             val settings = first.cutSettings
             val label = "${first.source} (#${group.joinToString { it.id.toString() }})"
-            if (settings.type == CutType.POCKET) {
-                warnings += "$label: Pocket preview not implemented"
-                continue
-            }
             if (settings.type == CutType.ON_PATH) {
                 group.forEach { paths += PreviewPath(it.points.copyOf(), it.closed, listOf(it.id)) }
                 continue
             }
             if (group.any { !it.closed }) {
-                warnings += "$label: Inside/Outside requires a closed contour."
+                warnings += "$label: Inside/Outside/Pocket requires a closed contour."
                 continue
             }
             // Do not silently reinterpret only part of a compound element as a filled area.
@@ -56,6 +52,11 @@ object ToolpathPreview {
                 // EvenOdd gives opposite winding to holes regardless of SVG winding direction.
                 val normalized = Clipper.union(input, null, FillRule.EvenOdd, PRECISION)
                 require(normalized.isNotEmpty()) { "No nonzero closed area" }
+                if (settings.type == CutType.POCKET) {
+                    require(group.all { it.cutSettings == settings }) { "Pocket subpaths require common cutting settings" }
+                    paths += SpiralPocket.calculate(normalized, settings, group.map { it.id })
+                    continue
+                }
                 val radius = settings.bitMm / 2
                 val delta = if (settings.type == CutType.INSIDE) -radius else radius
                 val result = Clipper.inflatePaths(normalized, delta, JoinType.Round, EndType.Polygon,

@@ -24,6 +24,7 @@ class CutSettingsPanel : VBox(6.0) {
     private val plunge = field("cutPlunge")
     private val pass = field("cutPassDepth")
     private val rpm = field("cutRpm")
+    private val stepover = field("cutStepOver")
     private val message = Label().apply { isWrapText = true }
     private val apply = Button("Apply to selection").apply { id = "applyCutSettings" }
 
@@ -34,6 +35,7 @@ class CutSettingsPanel : VBox(6.0) {
             "Cut Type" to type, "Cut Depth, mm" to depth, "Bit, mm" to bit,
             "Feed Rate, mm/min" to feed, "Plunge Rate, mm/min" to plunge,
             "Depth per Pass, mm" to pass, "Spindle Speed, RPM" to rpm,
+            "Pocket Step Over, %" to stepover,
         )
         controls.forEachIndexed { row, (label, control) ->
             grid.add(Label(label), 0, row); grid.add(control, 1, row)
@@ -44,7 +46,7 @@ class CutSettingsPanel : VBox(6.0) {
             Label("Blank / mixed = keep existing values").apply { style = "-fx-font-size: 10px;" }, apply, message)
         padding = Insets(4.0, 0.0, 4.0, 0.0)
         apply.setOnAction { applySettings() }
-        listOf(depth, feed, plunge, pass, rpm).forEach { it.setOnAction { applySettings() } }
+        listOf(depth, feed, plunge, pass, rpm, stepover).forEach { it.setOnAction { applySettings() } }
         type.valueProperty().addListener { _, _, value ->
             if (!refreshing && value != null) updateOperation { it.copy(type = value) }
         }
@@ -68,6 +70,8 @@ class CutSettingsPanel : VBox(6.0) {
         plunge.text = common { it.plungeMmMin }?.toString() ?: ""
         pass.text = common { it.passDepthMm }?.toString() ?: ""
         rpm.text = common { it.spindleRpm }?.toString() ?: ""
+        stepover.text = common { it.stepOverPercent }?.toString() ?: ""
+        stepover.isDisable = selection.none { it.cutSettings.type == CutType.POCKET }
         message.text = if (selection.any { !it.closed }) "Open contours: On Path only." else ""
         message.style = ""
         refreshing = false
@@ -76,6 +80,7 @@ class CutSettingsPanel : VBox(6.0) {
     private fun updateOperation(update: (CutSettings) -> CutSettings) {
         try {
             CutSettings.applyTo(selection, update)
+            stepover.isDisable = selection.none { it.cutSettings.type == CutType.POCKET }
             message.text = "Cut Type / Bit updated."
             message.style = ""
         } catch (e: IllegalArgumentException) {
@@ -97,6 +102,7 @@ class CutSettingsPanel : VBox(6.0) {
             val f = number(feed, "Feed Rate")
             val p = number(plunge, "Plunge Rate")
             val step = number(pass, "Depth per Pass")
+            val overlap = if (stepover.isDisable) null else number(stepover, "Pocket Step Over")
             val speed = rpm.text.trim().let { text ->
                 if (text.isEmpty()) null else text.toIntOrNull()?.takeIf { it > 0 }
                     ?: throw IllegalArgumentException("Spindle Speed must be a positive whole number.")
@@ -106,6 +112,7 @@ class CutSettingsPanel : VBox(6.0) {
                 depthMm = d ?: old.depthMm, feedMmMin = f ?: old.feedMmMin,
                 plungeMmMin = p ?: old.plungeMmMin, passDepthMm = step ?: old.passDepthMm,
                 spindleRpm = speed ?: old.spindleRpm,
+                stepOverPercent = overlap ?: old.stepOverPercent,
             ) }
             showSelection(selection)
             message.text = "Settings applied to ${selection.size} contour(s)."

@@ -14,8 +14,10 @@ data class CutSettings(
     val plungeMmMin: Double = 200.0,
     val passDepthMm: Double = 1.0,
     val spindleRpm: Int = 12000,
+    val stepOverPercent: Double = 40.0,
 ) {
     init {
+        require(stepOverPercent.isFinite() && stepOverPercent in 1.0..50.0) { "Pocket Step Over must be between 1 and 50%." }
         require(listOf(depthMm, feedMmMin, plungeMmMin, passDepthMm).all { it.isFinite() && it > 0 }) {
             "Depth, feed, plunge and depth per pass must be positive finite numbers."
         }

@@ -64,7 +64,7 @@ class AboutSimpleCamTest {
         val stage = Stage()
         try {
             SimpleCamApp().start(stage)
-            assertNull(stage.scene.lookup(".menu-bar"))
+            assertTrue(stage.scene.lookup(".menu-bar") != null)
             val toolbar = stage.scene.lookup(".tool-bar") as ToolBar
             val item = toolbar.items.filterIsInstance<Button>().single { it.id == "aboutSimpleCAM" }
             assertEquals("About SimpleCAM", item.text)

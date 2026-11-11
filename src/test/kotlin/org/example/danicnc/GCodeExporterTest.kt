@@ -96,7 +96,7 @@ class GCodeExporterTest {
         assertFalse(one.contains("S9000"))
         settings(a,CutType.POCKET)
         assertDoesNotThrow { export(listOf(a,b),listOf(b),ExportScope.SELECTED) }
-        assertThrows(IllegalArgumentException::class.java) { export(listOf(a,b)) }
+        assertDoesNotThrow { export(listOf(a,b)) }
     }
 
     @Test fun `compound holes need complete selection and consistent per path cutting parameters`() {
@@ -112,7 +112,7 @@ class GCodeExporterTest {
 
     @Test fun `invalid or hidden paths cancel without creating or replacing files`() {
         val valid=rectangle();settings(valid)
-        val pocket=rectangle(2);settings(pocket,CutType.POCKET)
+        val pocket=rectangle(2,height=2.0);settings(pocket,CutType.POCKET)
         val thin=rectangle(3,width=40.0,height=5.0);settings(thin,CutType.INSIDE)
         val empty=Contour(4,"empty",doubleArrayOf(),false)
         val bad=Contour(5,"bad",doubleArrayOf(Double.NaN,0.0,5.0,5.0),false)

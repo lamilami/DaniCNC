@@ -63,13 +63,14 @@ class ToolpathPreviewTest {
         }
     }
 
-    @Test fun `different contours retain independent settings and pocket is never previewed`() {
+    @Test fun `different contours retain independent settings including spiral pocket`() {
         val a=rect(); val b=rect(2,x=60.0); val pocket=rect(3,x=120.0)
         configure(a,CutType.OUTSIDE); configure(b,CutType.INSIDE,2.0); configure(pocket,CutType.POCKET)
         val result=ToolpathPreview.calculate(listOf(a,b,pocket))
-        assertEquals(2,result.paths.size)
+        assertEquals(3,result.paths.size)
         assertEquals(46.0,bounds(result.paths.first { 1 in it.contourIds }).width,0.0021)
         assertEquals(38.0,bounds(result.paths.first { 2 in it.contourIds }).width,1e-6)
-        assertTrue(result.warnings.single().contains("Pocket preview not implemented"))
+        assertTrue(result.warnings.isEmpty(), result.warnings.toString())
+        assertFalse(result.paths.first { 3 in it.contourIds }.closed)
     }
 }

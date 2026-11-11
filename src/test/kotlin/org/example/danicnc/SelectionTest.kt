@@ -342,8 +342,8 @@ class SelectionTest {
             area.drag(Point2D(100.0,100.0),Point2D(130.0,120.0),MouseButton.MIDDLE)
             assertSame(prior,area.previewResult,"Pan must not recalculate machine geometry")
             type.value=CutType.POCKET
-            assertEquals(true,area.previewResult.paths.isEmpty())
-            assertEquals(true,area.previewResult.warnings.single().contains("Pocket preview not implemented"))
+            assertEquals(false,area.previewResult.paths.isEmpty())
+            assertEquals(true,area.previewResult.warnings.isEmpty())
             type.value=CutType.ON_PATH
             assertArrayEquals(c.points,area.previewResult.paths.single().points)
         } finally { stage.close() }

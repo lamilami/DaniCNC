@@ -27,7 +27,6 @@ object GCodeExporter {
         require(project.map { it.id }.distinct().size == project.size) { "Duplicate contour IDs in project." }
         // Compensated compound SVG paths must retain their holes and complete boundaries.
         for (c in contours) {
-            require(c.cutSettings.type != CutType.POCKET) { "${c.source}: Pocket export not implemented." }
             if (c.cutSettings.type != CutType.ON_PATH) {
                 require(project.filter { it.source == c.source }.all { it in contours }) {
                     "${c.source}: Select all subpaths of this compound contour, including holes."

@@ -20,6 +20,12 @@ import javafx.scene.control.TableCell
 import javafx.scene.control.TableColumn
 import javafx.scene.control.TableView
 import javafx.scene.control.ToolBar
+import javafx.scene.control.ButtonType
+import javafx.scene.control.Menu
+import javafx.scene.control.MenuBar
+import javafx.scene.control.MenuItem
+import javafx.scene.control.SeparatorMenuItem
+import javafx.scene.input.KeyCombination
 import javafx.scene.layout.BorderPane
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
@@ -54,6 +60,11 @@ class SimpleCamApp : Application() {
         id = "previewStatus"; isWrapText = true; style = "-fx-text-fill: #d5006d;"
     }
     private var lastDir: File? = null
+    private var projectFile: File? = null
+    private var sourceName = ""
+    private var unsavedChanges = false
+    private var installingProject = false
+    private var syncWorkspaceControls: () -> Unit = {}
     private lateinit var stage: Stage
     private val aboutDialog = AboutSimpleCam { hostServices.showDocument(it) }
 
@@ -62,32 +73,43 @@ class SimpleCamApp : Application() {
         workArea.onExportSelected = { exportGCode(ExportScope.SELECTED) }
 
         val openBtn = Button("Open SVG").apply { setOnAction { openSvg() } }
+        val openProjectBtn = Button("Open Project").apply { id="openProject"; setOnAction { openProject() } }
+        val saveProjectBtn = Button("Save Project").apply { id="saveProject"; setOnAction { saveProject() } }
         val exportBtn = Button("Export G-code").apply { id = "exportGCode"; setOnAction { exportGCode() } }
+        val simulateBtn = Button("Simulate G-code").apply { id = "simulateGCode"; setOnAction { simulateGCode() } }
         val fitBtn = Button("Fit").apply { setOnAction { workArea.fit() } }
         clearBtn.setOnAction { workArea.clearSelection() }
         clearBtn.isDisable = true
         sizeLabel.style = "-fx-font-weight: bold; -fx-font-size: 13px;"
         val snap = CheckBox("Snap to Grid").apply {
+            id="snapToGrid"
             isSelected = workArea.snapToGrid
-            setOnAction { workArea.snapToGrid = isSelected }
+            setOnAction { workArea.snapToGrid = isSelected; markProjectChanged() }
         }
         val grid = ComboBox<Double>(FXCollections.observableArrayList(1.0, 5.0, 10.0)).apply {
+            id="gridStep"
             value = workArea.gridStep
-            setOnAction { workArea.gridStep = value }
+            setOnAction { workArea.gridStep = value; markProjectChanged() }
         }
         val preview = CheckBox("Preview ON/OFF").apply {
             id = "previewToggle"; isSelected = workArea.previewVisible
-            setOnAction { workArea.previewVisible = isSelected }
+            setOnAction { workArea.previewVisible = isSelected; markProjectChanged() }
         }
         workArea.onPreviewChanged = { result ->
+            markProjectChanged()
             previewStatus.text = if (result.warnings.isEmpty()) "Toolpath: ${result.paths.size} XY path(s) — cutter centre"
                 else result.warnings.joinToString("\n")
+        }
+        syncWorkspaceControls = {
+            snap.isSelected=workArea.snapToGrid
+            grid.value=workArea.gridStep
+            preview.isSelected=workArea.previewVisible
         }
         val aboutBtn = Button("About SimpleCAM").apply {
             id = "aboutSimpleCAM"
             setOnAction { aboutDialog.show(stage) }
         }
-        val toolBar = ToolBar(openBtn, exportBtn, fitBtn, Separator(), clearBtn, Separator(), preview, snap,
+        val toolBar = ToolBar(openBtn, openProjectBtn, saveProjectBtn, exportBtn, simulateBtn, fitBtn, Separator(), clearBtn, Separator(), preview, snap,
             Label("Grid, mm:"), grid, Separator(), sizeLabel, Separator(), aboutBtn)
 
         val spacer = Region().also { HBox.setHgrow(it, Priority.ALWAYS) }
@@ -106,11 +128,12 @@ class SimpleCamApp : Application() {
         workArea.onSelectionChanged = ::selectionChanged
         workArea.onGeometryMoved = ::updatePosition
 
-        val root = BorderPane(workArea, toolBar, createSelectionPanel(), statusBar, null)
+        val root = BorderPane(workArea, VBox(createFileMenu(),toolBar), createSelectionPanel(), statusBar, null)
         stage.title = "SimpleCAM 1830"
         stage.scene = Scene(root, 1280.0, 800.0)
         stage.minWidth = 800.0
         stage.minHeight = 500.0
+        stage.setOnCloseRequest { if(!confirmSaveChanges()) it.consume() }
         stage.show()
 
         // по желание: файл от командния ред
@@ -233,6 +256,84 @@ class SimpleCamApp : Application() {
         chooser.showOpenDialog(stage)?.let { loadFile(it) }
     }
 
+    private fun createFileMenu(): MenuBar {
+        fun item(label: String, shortcut: String, action: () -> Unit) = MenuItem(label).apply {
+            accelerator=KeyCombination.keyCombination(shortcut); setOnAction { action() }
+        }
+        return MenuBar(Menu("File").apply {
+            items.addAll(item("Open Project…","Shortcut+O",::openProject),
+                item("Open SVG…","Shortcut+Shift+O",::openSvg),SeparatorMenuItem(),
+                item("Save Project","Shortcut+S") { saveProject() },
+                item("Save Project As…","Shortcut+Shift+S") { saveProject(true) })
+        })
+    }
+
+    private fun openProject() {
+        val chooser=FileChooser().apply {
+            title="Open DCNC Project"
+            extensionFilters.add(FileChooser.ExtensionFilter("SimpleCAM project (*.dcnc)","*.dcnc"))
+            lastDir?.takeIf { it.isDirectory }?.let { initialDirectory=it }
+        }
+        chooser.showOpenDialog(stage)?.let(::loadFile)
+    }
+
+    private fun markProjectChanged() {
+        if(!installingProject && workArea.projectDrawing!=null) {
+            unsavedChanges=true
+            updateProjectTitle()
+        }
+    }
+
+    private fun updateProjectTitle() {
+        stage.title="SimpleCAM 1830 — ${projectFile?.name ?: sourceName.ifBlank { "Untitled" }}${if(unsavedChanges) " *" else ""}"
+    }
+
+    internal fun saveProjectTo(file: File) {
+        val drawing=requireNotNull(workArea.projectDrawing) { "Open an SVG or project first." }
+        ProjectIO.save(file.toPath(),ProjectState(drawing,sourceName,workArea.gridStep,workArea.snapToGrid,workArea.previewVisible))
+        projectFile=file; lastDir=file.absoluteFile.parentFile
+        fileLabel.text=file.name
+        unsavedChanges=false; updateProjectTitle()
+    }
+
+    private fun saveProject(saveAs: Boolean = false): Boolean {
+        if(workArea.projectDrawing==null) {
+            Alert(Alert.AlertType.INFORMATION,"Open an SVG or project first.").apply { initOwner(stage); headerText="No project to save" }.showAndWait()
+            return false
+        }
+        try {
+            val target=if(!saveAs && projectFile!=null) projectFile!! else {
+                val chooser=FileChooser().apply {
+                    title="Save DCNC Project"
+                    extensionFilters.add(FileChooser.ExtensionFilter("SimpleCAM project (*.dcnc)","*.dcnc"))
+                    initialFileName=projectFile?.name ?: (sourceName.substringBeforeLast('.').ifBlank { "project" }+".dcnc")
+                    (projectFile?.absoluteFile?.parentFile ?: lastDir)?.takeIf { it.isDirectory }?.let { initialDirectory=it }
+                }
+                val selected=chooser.showSaveDialog(stage) ?: return false
+                val file=if(selected.extension.equals("dcnc",true)) selected else File(selected.parentFile,selected.name+".dcnc")
+                if(file!=selected && file.exists()) {
+                    val replace=Alert(Alert.AlertType.CONFIRMATION,"Replace ${file.name}?",ButtonType.YES,ButtonType.CANCEL).apply { initOwner(stage) }
+                    if(replace.showAndWait().orElse(ButtonType.CANCEL)!=ButtonType.YES) return false
+                }
+                file
+            }
+            saveProjectTo(target)
+            return true
+        } catch(e: Exception) {
+            Alert(Alert.AlertType.ERROR,e.message ?: "Cannot save project.").apply { initOwner(stage); headerText="Project was not saved" }.showAndWait()
+            return false
+        }
+    }
+
+    private fun confirmSaveChanges(): Boolean {
+        if(!unsavedChanges) return true
+        val save=ButtonType("Save"); val discard=ButtonType("Discard")
+        val choice=Alert(Alert.AlertType.CONFIRMATION,"Save changes to the current project?",save,discard,ButtonType.CANCEL).apply {
+            initOwner(stage); headerText="Unsaved project changes"
+        }.showAndWait().orElse(ButtonType.CANCEL)
+        return when(choice) { save -> saveProject(); discard -> true; else -> false }
+    }
+
     private fun exportGCode(requestedScope: ExportScope? = null) {
         val scope = requestedScope ?: ChoiceDialog(GCodeExporter.defaultScope(workArea.selected), ExportScope.entries).apply {
             initOwner(stage)
@@ -262,12 +363,51 @@ class SimpleCamApp : Application() {
         }
     }
 
-    private fun loadFile(file: File) {
+    private fun simulateGCode() {
+        val scope=ChoiceDialog(GCodeExporter.defaultScope(workArea.selected),ExportScope.entries).apply {
+            initOwner(stage); title="Simulate G-code"; headerText="Choose simulation scope"; contentText="Scope:"
+        }.showAndWait().orElse(null) ?: return
         try {
-            val d = SvgLoader.load(file)
+            val program=GCodeExporter.generate(workArea.projectContours,workArea.selected,scope,workArea.previewVisible)
+            val pane=GCodeSimulationPane(program)
+            Stage().apply {
+                initOwner(stage)
+                title="G-code simulation — $scope — snapshot"
+                scene=Scene(pane,1050.0,740.0)
+                minWidth=850.0; minHeight=500.0
+                setOnHidden { pane.dispose() }
+                show()
+            }
+        } catch(e: Exception) {
+            Alert(Alert.AlertType.ERROR,e.message ?: "Cannot simulate this program.").apply {
+                initOwner(stage); headerText="Simulation could not start"
+            }.showAndWait()
+        }
+    }
+
+    internal fun loadFile(file: File) {
+        try {
+            val isProject=file.extension.equals("dcnc",true)
+            var project=if(isProject) ProjectIO.load(file.toPath()) else ProjectState(SvgLoader.load(file),file.name)
+            val hadUnsavedChanges=unsavedChanges
+            if(!confirmSaveChanges()) return
+            // Saving in the prompt may replace the very file we are opening.
+            if(hadUnsavedChanges && isProject && file.canonicalFile==projectFile?.canonicalFile)
+                project=ProjectIO.load(file.toPath())
+            val d=project.drawing
+            installingProject=true
+            try {
+                workArea.snapToGrid=project.snapToGrid
+                workArea.gridStep=project.gridStep
+                workArea.previewVisible=project.previewVisible
+                workArea.setDrawing(d)
+                syncWorkspaceControls()
+            } finally { installingProject=false }
+            projectFile=if(isProject) file else null
+            sourceName=project.sourceName
+            unsavedChanges=!isProject
             lastDir = file.parentFile
-            workArea.setDrawing(d)
-            stage.title = "SimpleCAM 1830 — ${file.name}"
+            updateProjectTitle()
             fileLabel.text = file.name
             sizeLabel.text = d.geometryBounds
                 ?.let { "Drawing: ${mm(it.width)} × ${mm(it.height)} mm" }

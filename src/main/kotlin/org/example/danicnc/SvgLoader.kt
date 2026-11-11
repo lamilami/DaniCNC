@@ -25,6 +25,8 @@ class SvgDrawing(
     val docHeightMm: Double,
     /** Пропуснати (неподдържани) елементи, за информация. */
     val skipped: Map<String, Int>,
+    /** Original SVG bytes travel with a project; working geometry is saved separately. */
+    val originalSvg: ByteArray? = null,
 ) {
     /** Текущ обхват на геометрията в mm (променя се при преместване). */
     val geometryBounds: Bounds? get() = Contour.boundsOf(contours)
@@ -41,6 +43,7 @@ object SvgLoader {
         "symbol", "marker", "pattern", "linearGradient", "radialGradient", "filter", "namedview")
 
     fun load(file: File): SvgDrawing {
+        val originalSvg = file.readBytes()
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
             isExpandEntityReferences = false
@@ -49,7 +52,7 @@ object SvgLoader {
             trySetFeature("http://xml.org/sax/features/external-general-entities", false)
             trySetFeature("http://xml.org/sax/features/external-parameter-entities", false)
         }
-        val svg = factory.newDocumentBuilder().parse(file).documentElement
+        val svg = factory.newDocumentBuilder().parse(originalSvg.inputStream()).documentElement
         require(svg.name() == "svg") { "Файлът не е SVG (коренов елемент <${svg.name()}>)" }
 
         // --- мащаб от потребителски единици към mm ---
@@ -89,7 +92,7 @@ object SvgLoader {
             for (k in 1 until p.size step 2) p[k] = flipH - p[k]
             Contour(i + 1, r.source, p, r.closed)
         }
-        return SvgDrawing(contours, docW, docH, ctx.skipped)
+        return SvgDrawing(contours, docW, docH, ctx.skipped, originalSvg)
     }
 
     private class Raw(val source: String, val pts: DoubleArray, val closed: Boolean)
