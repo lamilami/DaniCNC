@@ -1,122 +1,78 @@
-# DaniCNC
+# SimpleCAM 1830 🍒
 
-## 2D Toolpath Preview — задача 7
+**Simple 2D CAM for CNC hobbyists.**
 
-Траекториите на центъра на фрезата са розови пунктирни линии върху оригиналния SVG.
-`Preview ON/OFF` скрива само този слой. Zoom/Pan не променят изчислените mm координати.
-Промяната на Cut Type или Bit в Cut Settings се прилага веднага; останалите параметри
-продължават да се прилагат с `Apply to selection`. Ctrl+Click позволява обща редакция.
+From an SVG drawing to GRBL G-code, in a straightforward desktop workspace.
+Open your design, choose how to cut it, check the toolpath and export.
 
-- On Path копира оригиналния контур, включително отворени линии.
-- Inside/Outside използват Clipper2-java 2.0.1b, offset ±(диаметър/2), Round joins,
-  precision 6 и arc tolerance 0.001 mm. Входните точки не се променят.
-- Подконтурите на един SVG path се обработват като обща област с отвори (EvenOdd).
-  За компенсация на такава област приложете еднакъв Cut Type и Bit на всички нейни
-  подконтури. Различни SVG елементи остават независими операции. Отделен вложен
-  SVG елемент не се превръща автоматично в отвор на друг елемент.
-- Ако компенсацията изчезне, премахне граница или раздели Inside област при тесен
-  проход, показва предупреждение и пропуска тази операция. Не свързва отделните
-  области с измислена линия. Това не е симулация на сблъсъци или Pocket изчистване.
-- Pocket показва `Pocket preview not implemented` и не генерира траектория.
+*Made for makers, not subscriptions.*
 
-Пример: отворете `samples/toolpath_preview.svg`. За правоъгълника 40×30 mm изберете
-Ø6 и Outside (46×36 mm) или Inside (34×24 mm). За `ring` изберете и двата подконтура
-с Ctrl+Click и задайте общи Inside/Ø6. `tooNarrow` и `narrowNeck` с Inside/Ø6
-показват предупреждения. Отворената линия работи с On Path/Ø1.
+## Start cutting your design
 
-Геометричните и JavaFX интеграционните тестове се изпълняват с `.\mvnw.cmd test`.
-Clipper2-java е чиста Java зависимост от JitPack, JPMS модул `clipper2`, лиценз
-Boost Software License 1.0: https://github.com/micycle1/Clipper2-java/blob/2.0.1b/LICENSE.
-Самият Preview остава само XY: без Pocket, Z проходи или 3D визуализация.
+1. **Open SVG** — load your drawing.
+2. **Select a contour** — set the tool diameter, cut depth, depth per pass, feed, plunge and spindle speed.
+3. **Choose On Path, Inside or Outside** — see the cutter-centre toolpath update immediately.
+4. **Export G-code** — save the selection or the entire drawing as a GRBL `.nc` file.
 
-## GRBL G-code Export — задача 8
+Right-click a contour or toolpath to **set its start point**, **reverse its direction** or **export the selection**.
+The green **START** marker shows where cutting begins. Each separate toolpath keeps its own start and direction as you adjust the cut.
 
-`Export G-code` предлага `Selected Contours` и `Entire Project`. При текущ избор
-началният обхват е Selected Contours, иначе Entire Project. Включете Preview преди
-експорт: скритите траектории не се експортират. Скритите SVG елементи не се зареждат
-като геометрия и също не участват.
+## A small workspace with useful tools
 
-Експортът използва същия ToolpathPreview калкулатор и първата точка на неговите XY
-траектории. Редът е по текущия модел; няма преместване към нулата. За отворени линии
-се следва първият край, без добавяне на затваряща отсечка. Затворените пътища се
-връщат до първата точка. За компенсирана област с отвори трябва да са избрани всички
-подконтури и те да имат еднакви настройки, включително дълбочини, скорости и обороти.
+- SVG import with dimensions in millimetres.
+- Zoom, pan, grid snapping and precise X/Y placement.
+- Multiple selection with **Ctrl + Click** and shared cutting settings.
+- Inside/outside tool compensation powered by **Clipper2-java**.
+- Open and closed contours, including compound SVG paths with holes.
+- Toolpath preview and G-code export with multiple depth passes.
+- **About SimpleCAM** in the toolbar, with credits, version and offline license notices.
 
-Z0 е горната повърхност на материала. Проходите са отрицателни, с последен проход
-точно до Cut Depth. Преди всяко бързо XY движение има отделно оттегляне `G0 Z5`;
-спускането е `G1` с Plunge Rate, а XY рязането — `G1` с Feed Rate. Шпинделът се
-включва с `M3 S...`, обновява оборотите при промяна и се спира с `M5`; край `M2`.
-Началните режими са `G21`, `G90`, `G17`, `G94`.
+Toolpath edits leave the imported SVG geometry intact. For closed paths, the start can be anywhere along a segment; for open paths, choose either end.
 
-**Z+5 mm е избрана височина за оттегляне, не гаранция за безопасна установка.**
-Файлът не сменя диаметъра на физически монтирания инструмент и не изпраща команди
-към машина. Винаги проверявайте работната нула, инструмента, материала и закрепването.
+## Windows — unzip and run
 
-Pocket, празни/невалидни пътища, предупреждение от Preview или невалидни параметри
-прекратяват целия избран обхват. Първо се генерира и проверява целият текст; записът
-ползва временен файл и атомична подмяна. При отказ стар файл не се заменя и няма
-частично експортирани операции. Няма Tabs, 3D или GRBL sender.
+Extract the complete **Windows x64 ZIP**, open the `SimpleCAM` folder and double-click **`SimpleCAM.exe`**.
 
-### Context Menu — начало и посока
+Java and JavaFX are included. No separate Java installation, Maven or installer is needed.
+Keep the `app` and `runtime` folders beside the executable. Sample SVG drawings are included in `samples`.
 
-Десен бутон върху SVG контур или видима Toolpath линия отваря:
-`Set Start Point Here`, `Reverse Direction`, `Export Selected G-code`.
-Ако контурът вече е в текущата селекция, тя се запазва; иначе той става избраният.
-За общ компенсиран SVG path десен бутон върху траекторията избира нейните подконтури.
+## Current scope
 
-Зеленият маркер `START` показва реалната първа точка. При затворен път избраното
-място се проектира върху най-близкия сегмент, включително във вътрешността му;
-този сегмент се разделя само в производната траектория. Reverse запазва началото
-на затворения път. При отворен път началото се избира само между двата края;
-Reverse разменя началния и крайния край.
+SimpleCAM prepares **2D toolpaths and GRBL G-code**. Pocket clearing, holding tabs, 3D machining and direct machine control are not implemented.
+Real-machine validation is still pending.
 
-Предпочитанията се пазят в състоянието на контура, отделно за всяка негова траектория.
-Компонентите се съпоставят по позиция и ориентация, а не по реда на Clipper резултата.
-След промяна на Bit/Cut Type началото се проектира върху новата траектория;
-при преместване на геометрията се премества заедно с нея. G-code използва същото
-начало и посока като Preview. `Export Selected G-code` преминава направо към запис
-за текущата селекция, със същите проверки срещу невалиден или частичен експорт.
-При липса на валиден видим път настройките за начало и посока са недостъпни.
+The export uses **Z0 at the material surface** and a **Z+5 mm retract**. Check the generated program, work zero and clamp clearance before running it on your CNC.
 
-Допълнението е проверено с тестове за точка вътре в сегмент, двата отворени края,
-обръщане, нов диаметър/Cut Type, преместване, независими компоненти, G-code и JavaFX меню.
+## Build it yourself
 
-### Пример и проверка
-
-- SVG: `samples/gcode_rectangle_40x30.svg` — габарит 40×30 mm, долен ляв ъгъл (10,20).
-- Изберете Outside, Ø6, Cut Depth 6, Depth per Pass 2, Feed 600, Plunge 200, Spindle 12000.
-- Готов файл: `samples/outside_40x30_bit6_depth6.nc`, генериран от реалния exporter.
-- Очакван XY обхват: X7..53, Y17..53 (46×36 mm); Z проходи -2, -4, -6 и оттегляния +5.
-- Отворете файла в https://ncviewer.com/ и натиснете Plot, ако е необходимо.
-
-Проверка на 2026-11-10: `mvnw.cmd test` — **32 теста, 0 failures, 0 errors**,
-включително 9 теста на exporter: Outside/Inside, отворена линия, точни начални точки,
-затваряне, проходи, различни параметри/обороти, обхват, отказ без частичен файл,
-геометрична неизменност и запазване на съществуващ файл при отказ.
-Автоматично отваряне в NC Viewer не беше възможно: browser runtime е блокиран от
-Windows sandbox (`CreateProcessWithLogonW failed: 1260`). Визуалната проверка в сайта
-остава непотвърдена; геометрията и последователността на командите са проверени автоматично.
-
-Поддържани GRBL команди: https://github.com/gnea/grbl/wiki#supported-g-codes-in-v11.
-
-## Стартиране
-
-В IntelliJ IDEA изберете конфигурацията **DaniCNC** и натиснете Run.
-Тя изпълнява Maven `compile javafx:run`.
-
-За стартиране от PowerShell с настроен `JAVA_HOME` към JDK 23 или по-нов:
+On Windows, use a **JDK 23 or newer** with `JAVA_HOME` configured:
 
 ```powershell
 .\mvnw.cmd compile javafx:run
 ```
 
-След промяна на `pom.xml` изпълнете **Reload All Maven Projects** в Maven
-панела на IntelliJ. Това е необходимо и ако `LauncherKt` съобщава
-`NoClassDefFoundError: kotlin/enums/EnumEntriesKt`: IDE пази стара Kotlin
-библиотека от премахнатата FXGL зависимост.
-
-## Тестове
+Run the tests:
 
 ```powershell
 .\mvnw.cmd test
 ```
+
+Build the portable Windows x64 ZIP with a Windows x64 JDK:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+```
+
+The packaging script runs the tests and writes the ZIP and SHA-256 checksum to `target/dist`.
+
+## Credits
+
+**Responsible Person** — [Daniel Denkov](https://github.com/lamilami)
+
+**Software Development** — Claude · Anthropic; Codex · OpenAI
+
+**Architecture & Technical Assistance** — ChatGPT · OpenAI
+
+Built with **Kotlin**, **JavaFX** and **Clipper2-java**. Full third-party notices are available in the application's **About → Licenses** tab and [THIRD-PARTY-NOTICES.txt](src/main/resources/org/example/danicnc/THIRD-PARTY-NOTICES.txt).
+
+**Special Thanks** — To the open-source community and everyone making useful tools freely available.
