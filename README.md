@@ -1,5 +1,7 @@
 # SimpleCAM 1830 🍒
 
+[![Download for Windows](https://img.shields.io/badge/Download_for_Windows-x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/lamilami/DaniCNC/releases/download/v1.0-SNAPSHOT/SimpleCAM-1830-1.0-SNAPSHOT-Windows-x64.zip)
+
 **Simple 2D CAM for CNC hobbyists.**
 
 From an SVG drawing to GRBL G-code, in a straightforward desktop workspace.
