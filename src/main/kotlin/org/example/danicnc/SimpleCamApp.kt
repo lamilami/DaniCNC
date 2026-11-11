@@ -55,6 +55,7 @@ class SimpleCamApp : Application() {
     }
     private var lastDir: File? = null
     private lateinit var stage: Stage
+    private val aboutDialog = AboutSimpleCam { hostServices.showDocument(it) }
 
     override fun start(stage: Stage) {
         this.stage = stage
@@ -82,8 +83,12 @@ class SimpleCamApp : Application() {
             previewStatus.text = if (result.warnings.isEmpty()) "Toolpath: ${result.paths.size} XY path(s) — cutter centre"
                 else result.warnings.joinToString("\n")
         }
+        val aboutBtn = Button("About SimpleCAM").apply {
+            id = "aboutSimpleCAM"
+            setOnAction { aboutDialog.show(stage) }
+        }
         val toolBar = ToolBar(openBtn, exportBtn, fitBtn, Separator(), clearBtn, Separator(), preview, snap,
-            Label("Grid, mm:"), grid, Separator(), sizeLabel)
+            Label("Grid, mm:"), grid, Separator(), sizeLabel, Separator(), aboutBtn)
 
         val spacer = Region().also { HBox.setHgrow(it, Priority.ALWAYS) }
         val statusBar = HBox(16.0, fileLabel, docLabel, countLabel, spacer, cursorLabel, zoomLabel).apply {

@@ -1,0 +1,17 @@
+SimpleCAM 1830 - Windows x64 portable edition
+
+1. Extract the complete ZIP using Windows Explorer > Extract All.
+2. Open the extracted SimpleCAM folder.
+3. Double-click SimpleCAM.exe.
+
+Java, JavaFX and all application dependencies are included.
+No Java installation, Maven, installer or administrator access is required.
+Keep SimpleCAM.exe together with the app and runtime folders.
+To move the program, move the complete SimpleCAM folder.
+
+Use Open SVG to load your drawing. Example files are in samples.
+Application version, credits and licenses: About SimpleCAM in the toolbar.
+Third-party notices are also in THIRD-PARTY-NOTICES.txt.
+The bundled Java runtime includes its own legal notices in runtime/legal.
+
+This application exports G-code; it does not connect to or control your CNC.
