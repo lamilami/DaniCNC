@@ -7,6 +7,8 @@ Open your design, choose how to cut it, check the toolpath and export.
 
 *Made for makers, not subscriptions.*
 
+![SimpleCAM 1830 with an SVG panel, outside toolpath, START markers and cutting settings](docs/screenshots/workspace.png)
+
 ## Start cutting your design
 
 1. **Open SVG** — load your drawing.
@@ -28,6 +30,21 @@ The green **START** marker shows where cutting begins. Each separate toolpath ke
 - **About SimpleCAM** in the toolbar, with credits, version and offline license notices.
 
 Toolpath edits leave the imported SVG geometry intact. For closed paths, the start can be anywhere along a segment; for open paths, choose either end.
+
+<details>
+<summary>More screenshots — inside cuts and shared settings</summary>
+
+**Inside cut with a custom start point**
+
+![Inside tool compensation with a 6 mm cutter and a START point on the straight segment](docs/screenshots/inside-cut.png)
+
+**Select several contours and edit their cutting settings together**
+
+![Four mounting holes selected together with shared Inside cutting settings](docs/screenshots/multiple-selection.png)
+
+Try the drawing: [maker-panel.svg](samples/maker-panel.svg).
+
+</details>
 
 ## Windows — unzip and run
 
