@@ -2,9 +2,9 @@
 
 Version **2.1.0** adds box selection (window/crossing) with Shift/Ctrl/Alt, Space + drag panning, Undo Move (Ctrl+Z) and a configurable Safe Z: the cutter lifts before every XY move and drops to Z0 at the start point of each cut. Version 2.0.0 added Spiral Pocket, G-code simulation and self-contained `.dcnc` projects.
 
-[![Download for Windows v2.0.0](https://img.shields.io/badge/Download_for_Windows-v2.0.0_x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/lamilami/DaniCNC/releases/download/v2.0.0/SimpleCAM-1830-2.0.0-Windows-x64.zip)
+[![Download for Windows v2.1.0](https://img.shields.io/badge/Download_for_Windows-v2.1.0_x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/lamilami/DaniCNC/releases/download/v2.1.0/SimpleCAM-1830-2.1.0-Windows-x64.zip)
 
-[Release notes and SHA-256 checksum](https://github.com/lamilami/DaniCNC/releases/tag/v2.0.0)
+[Release notes and SHA-256 checksum](https://github.com/lamilami/DaniCNC/releases/tag/v2.1.0)
 
 **Simple 2D CAM for CNC hobbyists.**
 
