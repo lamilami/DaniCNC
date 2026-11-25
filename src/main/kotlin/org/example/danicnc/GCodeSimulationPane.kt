@@ -59,7 +59,7 @@ class GCodeSimulationPane(private val source: String) : BorderPane() {
             alignment=Pos.CENTER_LEFT
         }
         top=VBox(6.0,row,Label("G-code snapshot · 1× = programmed feed, constant speed; acceleration is not modelled."),
-            Label("Start assumed X0 Y0 Z+5 · Orange: G0 · Green: G1 · Purple dot: plunge · Red dot: cutting"),error).apply {
+            Label("Start assumed X0 Y0 Z0 (zeroed on material) · Orange: G0 · Green: G1 · Purple dot: plunge · Red dot: cutting"),error).apply {
             padding=Insets(10.0)
         }
         bottom=VBox(6.0,timeline,status,code).apply { padding=Insets(10.0) }

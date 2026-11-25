@@ -2,6 +2,7 @@ package org.example.danicnc
 
 import javafx.beans.property.ReadOnlyDoubleWrapper
 import javafx.beans.property.ReadOnlyObjectWrapper
+import javafx.geometry.BoundingBox
 import javafx.geometry.Bounds
 import javafx.geometry.Point2D
 import javafx.geometry.VPos
@@ -10,6 +11,10 @@ import javafx.scene.control.ContextMenu
 import javafx.scene.control.MenuItem
 import javafx.scene.canvas.Canvas
 import javafx.scene.canvas.GraphicsContext
+import javafx.event.EventHandler
+import javafx.scene.control.TextInputControl
+import javafx.scene.input.KeyCode
+import javafx.scene.input.KeyEvent
 import javafx.scene.input.MouseButton
 import javafx.scene.layout.Pane
 import javafx.scene.paint.Color
@@ -49,12 +54,18 @@ class WorkArea : Pane() {
         private const val HIT_PX = 6.0
         /** Под това преместване натискането е клик, а не влачене, px. */
         private const val CLICK_PX = 3.0
+        /** Колко премествания пази историята за Ctrl+Z. */
+        private const val MAX_UNDO = 100
+        /** Под това разстояние между линиите мрежата се разрежда ×10, px. */
+        private const val MIN_GRID_PX = 3.0
 
         val CLOSED_COLOR: Color = Color.web("#1565c0")
         val OPEN_COLOR: Color = Color.web("#8e24aa")
         val SELECTED_COLOR: Color = Color.web("#ff6d00")
         val TOOLPATH_COLOR: Color = Color.web("#d5006d")
         private val HOVER_COLOR = Color.web("#00acc1")
+        private val MARQUEE_WINDOW_COLOR = Color.web("#1e88e5")
+        private val MARQUEE_CROSSING_COLOR = Color.web("#2e7d32")
         private val X_AXIS_COLOR = Color.web("#d32f2f")
         private val Y_AXIS_COLOR = Color.web("#2e7d32")
     }
@@ -113,7 +124,11 @@ class WorkArea : Pane() {
     }
     private var pendingFit = true
 
-    private enum class Drag { NONE, PENDING_PAN, PENDING_MOVE, PAN, MOVE }
+    private enum class Drag { NONE, PENDING_PAN, PENDING_MOVE, PENDING_MARQUEE, PAN, MOVE, MARQUEE }
+    /** Как правоъгълникът за избор комбинира с текущия избор. */
+    private enum class MarqueeMode { REPLACE, ADD, REMOVE }
+    private var marqueeMode = MarqueeMode.REPLACE
+    private var marqueeEndPx: Point2D? = null
     private var drag = Drag.NONE
     private var pressPx: Point2D? = null
     private var lastPx: Point2D? = null
@@ -123,6 +138,14 @@ class WorkArea : Pane() {
 
     private var hover: Contour? = null
     private val selection = LinkedHashSet<Contour>()
+
+    /** Едно завършено преместване: кои контури и с колко mm. */
+    private class MoveRecord(val contours: List<Contour>, val dx: Double, val dy: Double)
+    private val moveHistory = ArrayDeque<MoveRecord>()
+    /** Има ли преместване, което може да се отмени с [undoMove]. */
+    val canUndoMove: Boolean get() = moveHistory.isNotEmpty()
+    /** Извиква се, когато историята на преместванията се промени. */
+    var onUndoAvailabilityChanged: (Boolean) -> Unit = {}
 
     /** Snap to Grid при влачене. */
     var snapToGrid = true
@@ -150,7 +173,32 @@ class WorkArea : Pane() {
     /** Позиция на курсора в mm (null извън площта). */
     val cursorMm = cursorWrapper.readOnlyProperty
 
+    /** Задържан Space над площта: ляв бутон мести изгледа вместо да избира. */
+    var spacePanning = false
+        private set(v) {
+            if (field == v) return
+            field = v
+            if (drag == Drag.NONE) cursor = if (v) Cursor.OPEN_HAND else Cursor.DEFAULT
+        }
+
+    private var pointerInside = false
+
+    /** Space се хваща на ниво сцена, без да отнема фокуса от полетата в панела. */
+    private val spaceFilter = EventHandler<KeyEvent> { e ->
+        if (e.code != KeyCode.SPACE) return@EventHandler
+        val typing = scene?.focusOwner is TextInputControl
+        when (e.eventType) {
+            KeyEvent.KEY_PRESSED -> if (!typing && (pointerInside || drag == Drag.PAN)) { spacePanning = true; e.consume() }
+            KeyEvent.KEY_RELEASED -> if (spacePanning) { spacePanning = false; e.consume() }
+        }
+    }
+
     init {
+        sceneProperty().addListener { _, old, new ->
+            old?.removeEventFilter(KeyEvent.ANY, spaceFilter)
+            new?.addEventFilter(KeyEvent.ANY, spaceFilter)
+            spacePanning = false
+        }
         canvas.isManaged = false
         children.add(canvas)
         setOnContextMenuRequested { e ->
@@ -165,16 +213,19 @@ class WorkArea : Pane() {
             if (e.deltaY != 0.0) zoomAt(e.x, e.y, if (e.deltaY > 0) ZOOM_STEP else 1 / ZOOM_STEP)
             e.consume()
         }
-        setOnMousePressed { e -> pressed(e.x, e.y, e.button, e.isShortcutDown) }
+        setOnMousePressed { e -> pressed(e.x, e.y, e.button, e.isShortcutDown || e.isShiftDown, e.isAltDown) }
         setOnMouseDragged { e -> dragged(e.x, e.y) }
-        setOnMouseReleased { e -> released(e.x, e.y, e.button, e.isShortcutDown) }
+        setOnMouseReleased { e -> released(e.x, e.y, e.button, e.isShortcutDown || e.isShiftDown) }
+        setOnMouseEntered { pointerInside = true }
         setOnMouseMoved { e ->
+            pointerInside = true
             updateCursor(e.x, e.y)
             val h = hitTest(e.x, e.y)
-            cursor = if (h != null && h in selection) Cursor.MOVE else Cursor.DEFAULT
+            cursor = if (spacePanning) Cursor.OPEN_HAND else if (h != null && h in selection) Cursor.MOVE else Cursor.DEFAULT
             if (h !== hover) { hover = h; redraw() }
         }
         setOnMouseExited {
+            pointerInside = false
             cursorWrapper.set(null)
             if (hover != null) { hover = null; redraw() }
         }
@@ -187,6 +238,7 @@ class WorkArea : Pane() {
         refreshPreview()
         hover = null
         selection.clear()
+        moveHistory.clear(); onUndoAvailabilityChanged(false)
         onSelectionChanged(selected)
         fit()
     }
@@ -202,9 +254,13 @@ class WorkArea : Pane() {
      * Премества избора така, че долният ляв ъгъл на обхващащия му правоъгълник
      * да е точно в (x, y) mm. Променя реалните координати на геометрията.
      */
-    fun moveSelectionTo(x: Double, y: Double) {
+    fun moveSelectionTo(x: Double, y: Double) = moveSelectionTo(x, y, record = true)
+
+    /** [record] = false по време на влачене; цялото влачене се записва веднъж при пускане. */
+    private fun moveSelectionTo(x: Double, y: Double, record: Boolean) {
         require(x.isFinite() && y.isFinite()) { "Coordinates must be finite" }
         val b = selectionBounds ?: return
+        if (record) recordMove(selection.toList(), x - b.minX, y - b.minY)
         val dx = x - b.minX
         val dy = y - b.minY
         selection.forEach { it.translate(dx, dy) }
@@ -220,22 +276,29 @@ class WorkArea : Pane() {
 
     // ------------------------------------------------------------ мишка
 
-    private fun pressed(px: Double, py: Double, button: MouseButton, ctrl: Boolean) {
+    /**
+     * [additive] = Ctrl или Shift: клик добавя/маха контур, правоъгълникът добавя към избора.
+     * [subtract] = Alt: правоъгълникът маха от избора.
+     */
+    private fun pressed(px: Double, py: Double, button: MouseButton, additive: Boolean, subtract: Boolean = false) {
         pressPx = Point2D(px, py)
         lastPx = pressPx
         pressMm = toMm(px, py)
+        marqueeEndPx = null
+        marqueeMode = when { subtract -> MarqueeMode.REMOVE; additive -> MarqueeMode.ADD; else -> MarqueeMode.REPLACE }
         drag = when (button) {
             MouseButton.MIDDLE -> Drag.PENDING_PAN
             MouseButton.PRIMARY -> {
-                val hit = hitTest(px, py)
-                if (hit != null && !ctrl) {
+                val hit = if (spacePanning) null else hitTest(px, py)
+                if (spacePanning) { cursor = Cursor.CLOSED_HAND; Drag.PAN }
+                else if (hit != null && !additive && !subtract) {
                     if (hit !in selection) { // натискане върху неизбран → избира само него
                         selection.clear(); selection += hit
                         onSelectionChanged(selected); redraw()
                     }
                     moveStartBL = selectionBounds?.let { Point2D(it.minX, it.minY) }
                     Drag.PENDING_MOVE
-                } else if (hit == null) Drag.PENDING_PAN else Drag.NONE
+                } else Drag.PENDING_MARQUEE // празно място или с модификатор → правоъгълник за избор
             }
             else -> Drag.NONE
         }
@@ -244,11 +307,16 @@ class WorkArea : Pane() {
     private fun dragged(px: Double, py: Double) {
         updateCursor(px, py)
         val p0 = pressPx ?: return
-        if ((drag == Drag.PENDING_PAN || drag == Drag.PENDING_MOVE) && hypot(px - p0.x, py - p0.y) > CLICK_PX) {
-            drag = if (drag == Drag.PENDING_PAN) Drag.PAN else Drag.MOVE
-            cursor = if (drag == Drag.PAN) Cursor.CLOSED_HAND else Cursor.MOVE
+        if ((drag == Drag.PENDING_PAN || drag == Drag.PENDING_MOVE || drag == Drag.PENDING_MARQUEE) &&
+            hypot(px - p0.x, py - p0.y) > CLICK_PX) {
+            drag = when (drag) { Drag.PENDING_PAN -> Drag.PAN; Drag.PENDING_MOVE -> Drag.MOVE; else -> Drag.MARQUEE }
+            cursor = when (drag) { Drag.PAN -> Cursor.CLOSED_HAND; Drag.MOVE -> Cursor.MOVE; else -> Cursor.CROSSHAIR }
         }
         when (drag) {
+            Drag.MARQUEE -> {
+                marqueeEndPx = Point2D(px, py)
+                redraw()
+            }
             Drag.PAN -> {
                 lastPx?.let { tx += px - it.x; ty += py - it.y }
                 redraw()
@@ -261,20 +329,26 @@ class WorkArea : Pane() {
                 var y = start.y + (m.y - m0.y)
                 if (snapToGrid) { x = snap(x); y = snap(y) }
                 dragCursorPx = Point2D(px, py)
-                moveSelectionTo(x, y)
+                moveSelectionTo(x, y, record = false)
             }
             else -> {}
         }
         lastPx = Point2D(px, py)
     }
 
-    private fun released(px: Double, py: Double, button: MouseButton, ctrl: Boolean) {
-        val wasDragging = drag == Drag.PAN || drag == Drag.MOVE
-        if (!wasDragging && button == MouseButton.PRIMARY && pressPx != null) click(px, py, ctrl)
+    private fun released(px: Double, py: Double, button: MouseButton, additive: Boolean) {
+        val wasDragging = drag == Drag.PAN || drag == Drag.MOVE || drag == Drag.MARQUEE
+        if (drag == Drag.MOVE) {
+            val start = moveStartBL; val b = selectionBounds
+            if (start != null && b != null) recordMove(selection.toList(), b.minX - start.x, b.minY - start.y)
+        }
+        if (drag == Drag.MARQUEE) pressPx?.let { applyMarquee(it, Point2D(px, py)) }
+        else if (!wasDragging && button == MouseButton.PRIMARY && pressPx != null) click(px, py, additive)
         drag = Drag.NONE
         pressPx = null
+        marqueeEndPx = null
         dragCursorPx = null
-        cursor = Cursor.DEFAULT
+        cursor = if (spacePanning) Cursor.OPEN_HAND else Cursor.DEFAULT
         redraw()
     }
 
@@ -289,6 +363,61 @@ class WorkArea : Pane() {
         }
         onSelectionChanged(selected)
         redraw()
+    }
+
+    /**
+     * Избор с правоъгълник (локални px). Влачене наляво→надясно (Window) избира само
+     * изцяло обхванатите контури; надясно→наляво (Crossing) — и пресечените.
+     */
+    private fun applyMarquee(a: Point2D, b: Point2D) {
+        val m0 = toMm(a.x, a.y); val m1 = toMm(b.x, b.y)
+        val r = BoundingBox(min(m0.x, m1.x), min(m0.y, m1.y), abs(m1.x - m0.x), abs(m1.y - m0.y))
+        val crossing = b.x < a.x
+        val hits = projectContours.filter { if (crossing) it.intersects(r) else it.isInside(r) }
+        val before = selected
+        when (marqueeMode) {
+            MarqueeMode.REPLACE -> { selection.clear(); selection.addAll(hits) }
+            MarqueeMode.ADD -> selection.addAll(hits)
+            MarqueeMode.REMOVE -> selection.removeAll(hits.toSet())
+        }
+        if (selected != before) onSelectionChanged(selected)
+    }
+
+    private fun drawMarquee(g: GraphicsContext, a: Point2D, b: Point2D) {
+        val crossing = b.x < a.x
+        val c = if (crossing) MARQUEE_CROSSING_COLOR else MARQUEE_WINDOW_COLOR
+        val x = min(a.x, b.x); val y = min(a.y, b.y)
+        val w = abs(b.x - a.x); val h = abs(b.y - a.y)
+        g.save()
+        g.fill = Color.color(c.red, c.green, c.blue, 0.12)
+        g.fillRect(x, y, w, h)
+        g.stroke = c; g.lineWidth = 1.0
+        if (crossing) g.setLineDashes(6.0, 4.0)
+        g.strokeRect(pix(x), pix(y), w, h)
+        g.restore()
+    }
+
+    private fun recordMove(contours: List<Contour>, dx: Double, dy: Double) {
+        if (contours.isEmpty() || (dx == 0.0 && dy == 0.0)) return
+        moveHistory.addLast(MoveRecord(contours, dx, dy))
+        while (moveHistory.size > MAX_UNDO) moveHistory.removeFirst()
+        onUndoAvailabilityChanged(true)
+    }
+
+    /**
+     * Връща последно преместените контури на предишната им позиция (Ctrl+Z)
+     * и ги избира. Връща false, ако няма какво да се отмени.
+     */
+    fun undoMove(): Boolean {
+        val m = moveHistory.removeLastOrNull() ?: return false
+        m.contours.forEach { it.translate(-m.dx, -m.dy) }
+        selection.clear(); selection.addAll(m.contours)
+        onUndoAvailabilityChanged(moveHistory.isNotEmpty())
+        onSelectionChanged(selected)
+        refreshPreview()
+        onGeometryMoved()
+        redraw()
+        return true
     }
 
     /** Закръгля към най-близката линия на мрежата. */
@@ -430,6 +559,7 @@ class WorkArea : Pane() {
             g.restore()
         }
         dragCursorPx?.let { p -> selectionBounds?.let { b -> drawDragLabel(g, p, b) } }
+        if (drag == Drag.MARQUEE) pressPx?.let { a -> marqueeEndPx?.let { b -> drawMarquee(g, a, b) } }
 
         g.fill = Color.web("#37474f")
         g.font = Font.font(11.0)
@@ -467,9 +597,10 @@ class WorkArea : Pane() {
      */
     private fun drawGrid(g: GraphicsContext, w: Double, h: Double): Double {
         var step = gridStep
-        while (step * s < 6) step *= 10
+        while (step * s < MIN_GRID_PX) step *= 10
         val major = step * 10
-        val minorC = Color.rgb(0, 0, 0, 0.07)
+        // гъстата мрежа е по-бледа, рядката — по-ясна; стъпката винаги се вижда
+        val minorC = Color.rgb(0, 0, 0, (0.03 + 0.01 * step * s).coerceAtMost(0.10))
         val majorC = Color.rgb(0, 0, 0, 0.18)
         g.lineWidth = 1.0
         var i = floor(-tx / s / step).toLong()

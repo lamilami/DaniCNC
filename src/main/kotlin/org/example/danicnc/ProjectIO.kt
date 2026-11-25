@@ -15,7 +15,8 @@ import kotlin.math.abs
 
 data class ProjectState(val drawing: SvgDrawing, val sourceName: String,
                         val gridStep: Double = 10.0, val snapToGrid: Boolean = true,
-                        val previewVisible: Boolean = true)
+                        val previewVisible: Boolean = true,
+                        val safeZMm: Double = GCodeExporter.DEFAULT_SAFE_Z_MM)
 
 /** Versioned, self-contained XML. Toolpaths are recalculated from exact saved doubles. */
 object ProjectIO {
@@ -32,7 +33,8 @@ object ProjectIO {
         fun text(name: String, value: String) { start(name); xml.writeCharacters(value); xml.writeEndElement() }
         xml.writeStartDocument("UTF-8","1.0")
         start("dcnc","version" to 1,"units" to "mm","sourceName" to project.sourceName)
-        start("workspace","gridStep" to project.gridStep,"snapToGrid" to project.snapToGrid,"previewVisible" to project.previewVisible)
+        start("workspace","gridStep" to project.gridStep,"snapToGrid" to project.snapToGrid,"previewVisible" to project.previewVisible,
+            "safeZ" to project.safeZMm)
         xml.writeEndElement()
         project.drawing.originalSvg?.let { text("original-svg",Base64.getEncoder().encodeToString(it)) }
         start("drawing","width" to project.drawing.docWidthMm,"height" to project.drawing.docHeightMm)
@@ -104,7 +106,9 @@ object ProjectIO {
             c
         }
         return ProjectState(SvgDrawing(contours,drawing.number("width"),drawing.number("height"),skipped,original),
-            root.attr("sourceName"),workspace.number("gridStep"),workspace.bool("snapToGrid"),workspace.bool("previewVisible"))
+            root.attr("sourceName"),workspace.number("gridStep"),workspace.bool("snapToGrid"),workspace.bool("previewVisible"),
+            // older projects have no safeZ attribute
+            if(workspace.hasAttribute("safeZ")) workspace.number("safeZ") else GCodeExporter.DEFAULT_SAFE_Z_MM)
             .also(::validate)
     }
 
@@ -128,6 +132,7 @@ object ProjectIO {
     private fun validate(project: ProjectState) {
         fun coordinate(value: Double)=value.isFinite() && abs(value)<=1e8
         require(project.gridStep in listOf(1.0,5.0,10.0)) { "Invalid grid step." }
+        GCodeExporter.validateSafeZ(project.safeZMm)
         val d=project.drawing
         require(coordinate(d.docWidthMm) && coordinate(d.docHeightMm) && d.docWidthMm>=0 && d.docHeightMm>=0) { "Invalid document size." }
         require(d.contours.map { it.id }.distinct().size==d.contours.size) { "Duplicate contour IDs." }

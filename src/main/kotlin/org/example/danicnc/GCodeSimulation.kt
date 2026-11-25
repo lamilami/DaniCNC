@@ -30,8 +30,8 @@ class GCodeSimulation private constructor(val moves: List<SimMove>, val sourceLi
     }
 
     companion object {
-        // Work origin and safe Z are assumptions for preview, not a machine position readout.
-        val INITIAL_POSITION = SimPosition(0.0,0.0,5.0)
+        // Assumed work origin with Z zeroed on the material top; not a machine position readout.
+        val INITIAL_POSITION = SimPosition(0.0,0.0,0.0)
         private val word = Regex("([A-Z])([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))")
 
         fun parse(program: String, rapidMmMin: Double): GCodeSimulation {

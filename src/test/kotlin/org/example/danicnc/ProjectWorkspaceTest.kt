@@ -73,7 +73,7 @@ class ProjectWorkspaceTest {
             assertEquals(2.0,ProjectIO.load(saved).drawing.contours.single().cutSettings.depthMm)
             assertEquals(2.0,area.projectContours.single().cutSettings.depthMm)
             val menu=stage.scene.lookup(".menu-bar") as MenuBar
-            val save=menu.menus.single().items.first { it.text=="Save Project" }
+            val save=menu.menus.first { it.text=="File" }.items.first { it.text=="Save Project" }
             area.projectContours.single().cutSettings=contour.cutSettings.copy(depthMm=4.0)
             save.fire()
             assertEquals(4.0,ProjectIO.load(saved).drawing.contours.single().cutSettings.depthMm)

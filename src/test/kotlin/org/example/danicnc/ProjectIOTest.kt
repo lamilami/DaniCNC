@@ -21,7 +21,7 @@ class ProjectIOTest {
         val updated=ToolpathPreview.calculate(drawing.contours).paths.first { 3 in it.contourIds }
         ToolpathTraversal.reverse(updated,drawing.contours)
         drawing.contours.forEach { it.translate(12.345678901,-3.123456789) }
-        return ProjectState(drawing,"чертеж.svg",5.0,false,false)
+        return ProjectState(drawing,"чертеж.svg",5.0,false,false,safeZMm=8.25)
     }
 
     @Test fun `project is self contained and preserves exact geometry settings starts and gcode`() {
@@ -33,6 +33,10 @@ class ProjectIOTest {
         val restored=ProjectIO.load(destination)
         assertEquals(original.sourceName,restored.sourceName)
         assertEquals(original.gridStep,restored.gridStep)
+        assertEquals(8.25,restored.safeZMm)
+        // projects saved before Safe Z existed load with the default
+        val legacy=String(ProjectIO.encode(original),Charsets.UTF_8).replace(Regex(" safeZ=\"[^\"]*\""),"")
+        assertEquals(GCodeExporter.DEFAULT_SAFE_Z_MM,ProjectIO.decode(legacy.toByteArray(Charsets.UTF_8)).safeZMm)
         assertFalse(restored.snapToGrid); assertFalse(restored.previewVisible)
         assertArrayEquals(original.drawing.originalSvg,restored.drawing.originalSvg)
         assertEquals(original.drawing.docWidthMm,restored.drawing.docWidthMm)

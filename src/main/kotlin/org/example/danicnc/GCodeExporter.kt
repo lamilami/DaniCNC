@@ -15,11 +15,24 @@ enum class ExportScope(private val label: String) {
 
 /** Builds the entire program before any file is touched. No machine communication. */
 object GCodeExporter {
-    const val RETRACT_MM = 5.0
+    /** Default safe travel height above the material top (Z0), mm. */
+    const val DEFAULT_SAFE_Z_MM = 5.0
+    const val MIN_SAFE_Z_MM = 0.5
+    const val MAX_SAFE_Z_MM = 100.0
+
+    fun validateSafeZ(z: Double) = require(z.isFinite() && z in MIN_SAFE_Z_MM..MAX_SAFE_Z_MM) {
+        "Safe Z must be between ${number(MIN_SAFE_Z_MM)} and ${number(MAX_SAFE_Z_MM)} mm."
+    }
     private const val MAX_LINES = 1_000_000L
     fun defaultScope(selected: List<Contour>) = if (selected.isEmpty()) ExportScope.ENTIRE_PROJECT else ExportScope.SELECTED
 
-    fun generate(project: List<Contour>, selected: List<Contour>, scope: ExportScope, previewVisible: Boolean): String {
+    /**
+     * Z0 is the material top. The cutter travels only at [safeZMm], drops rapidly to Z0 exactly
+     * above the first point of each cut and plunges from there; between toolpaths it lifts again.
+     */
+    fun generate(project: List<Contour>, selected: List<Contour>, scope: ExportScope, previewVisible: Boolean,
+                 safeZMm: Double = DEFAULT_SAFE_Z_MM): String {
+        validateSafeZ(safeZMm)
         require(previewVisible) { "Preview is hidden. Turn Preview ON before exporting visible toolpaths." }
         val selectedSet = selected.toSet()
         val contours = if (scope == ExportScope.ENTIRE_PROJECT) project else project.filter { it in selectedSet }
@@ -56,23 +69,30 @@ object GCodeExporter {
             require(lineCount <= MAX_LINES) { "Export exceeds one million lines." }
             Triple(path, settings, passes.toInt())
         }
+        val safe = number(safeZMm)
         return buildString {
             appendLine("(SimpleCAM 1830 - GRBL XY toolpaths)")
-            appendLine("(Z0 material top. Retract Z+5 must be checked for your setup.)")
+            appendLine("(Z0 = material top. Travel at safe Z$safe, Z0 is reached at the start point of each cut.)")
             appendLine("G21"); appendLine("G90"); appendLine("G17"); appendLine("G94")
-            appendLine("M5"); appendLine("G0 Z5")
+            // Lift before the first XY move, wherever Z was zeroed.
+            appendLine("M5"); appendLine("G0 Z$safe")
             var spindle: Int? = null
             for ((path, settings, passes) in jobs) {
                 appendLine("(Contours ${path.contourIds.joinToString(",")} - ${settings.type} - bit ${number(settings.bitMm)} mm)")
+                val x0 = number(path.points[0]); val y0 = number(path.points[1])
                 for (pass in 1..passes) {
                     val depth = BigDecimal.valueOf(settings.passDepthMm).multiply(BigDecimal.valueOf(pass.toLong()))
                         .min(BigDecimal.valueOf(settings.depthMm)).toDouble()
-                    val x0 = number(path.points[0]); val y0 = number(path.points[1])
                     appendLine("(Pass $pass/$passes)")
-                    appendLine("G0 Z5")
-                    appendLine("G0 X$x0 Y$y0")
-                    if (spindle != settings.spindleRpm) {
-                        appendLine("M3 S${settings.spindleRpm}"); spindle = settings.spindleRpm
+                    // A closed path ends at its start point, so the next pass plunges in place.
+                    // An open path ends elsewhere: lift, travel back over the material, drop to Z0.
+                    if (pass == 1 || !path.closed) {
+                        appendLine("G0 Z$safe")
+                        appendLine("G0 X$x0 Y$y0")
+                        if (spindle != settings.spindleRpm) {
+                            appendLine("M3 S${settings.spindleRpm}"); spindle = settings.spindleRpm
+                        }
+                        appendLine("G0 Z0")
                     }
                     appendLine("G1 Z-${number(depth)} F${number(settings.plungeMmMin)}")
                     for (i in 2 until path.points.size step 2) {
@@ -81,8 +101,8 @@ object GCodeExporter {
                     if (path.closed && (path.points[path.points.size - 2] != path.points[0] || path.points.last() != path.points[1])) {
                         appendLine("G1 X$x0 Y$y0 F${number(settings.feedMmMin)}")
                     }
-                    appendLine("G0 Z5")
                 }
+                appendLine("G0 Z$safe")
             }
             appendLine("M5"); appendLine("M2")
         }

@@ -1,6 +1,6 @@
 # SimpleCAM 1830 🍒
 
-Version **2.0.0** adds Spiral Pocket, G-code simulation and self-contained `.dcnc` projects.
+Version **2.1.0** adds box selection (window/crossing) with Shift/Ctrl/Alt, Space + drag panning, Undo Move (Ctrl+Z) and a configurable Safe Z: the cutter lifts before every XY move and drops to Z0 at the start point of each cut. Version 2.0.0 added Spiral Pocket, G-code simulation and self-contained `.dcnc` projects.
 
 [![Download for Windows v2.0.0](https://img.shields.io/badge/Download_for_Windows-v2.0.0_x64-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/lamilami/DaniCNC/releases/download/v2.0.0/SimpleCAM-1830-2.0.0-Windows-x64.zip)
 
@@ -29,12 +29,14 @@ The green **START** marker shows where cutting begins. Each separate toolpath ke
 
 - SVG import with dimensions in millimetres.
 - **Save Project / Open Project** (`.dcnc`) — a self-contained XML file containing the original SVG, exact current contour positions, cutting parameters, Pocket Step Over, start points/directions and grid/preview settings. The original SVG file is not needed to reopen a project. **Ctrl+S** saves, **Ctrl+Shift+S** saves a copy, **Ctrl+O** opens a project and **Ctrl+Shift+O** imports SVG. Unsaved changes are marked with `*` and prompt before replacing or closing a project.
-- Zoom, pan, grid snapping and precise X/Y placement.
-- Multiple selection with **Ctrl + Click** and shared cutting settings.
+- Zoom, pan (middle mouse button or **Space + left drag**), grid snapping and precise X/Y placement.
+- Multiple selection with **Shift/Ctrl + Click** and shared cutting settings.
+- **Box selection** — drag on empty space: left→right selects contours fully inside the box (blue), right→left also selects contours the box touches (green, dashed). Hold **Shift/Ctrl** to add to the selection or **Alt** to remove from it; Shift + drag also starts a box over a contour.
 - Inside/outside tool compensation powered by **Clipper2-java**.
 - Open and closed contours, including compound SVG paths with holes.
 - Toolpath preview and G-code export with multiple depth passes.
-- **Simulate G-code** — play the generated program in a separate window, with a moving tool marker, XYZ, current G-code line, timeline, pause/reset and 1×–64× playback. G1 timing follows the programmed feed, including Z plunges; G0 uses the configurable preview speed (default 1500 mm/min). Timing assumes constant speed without acceleration and an initial work position of X0 Y0 Z+5. The simulation is a snapshot of the chosen selection or project.
+- **Safe Z** (toolbar, default 5 mm, saved in the project): with Z0 on the material top, the program lifts first, travels only at Safe Z, drops to Z0 exactly above the start point of each cut and plunges from there. Closed contours plunge for the next pass in place; open paths lift and return to the start.
+- **Simulate G-code** — play the generated program in a separate window, with a moving tool marker, XYZ, current G-code line, timeline, pause/reset and 1×–64× playback. G1 timing follows the programmed feed, including Z plunges; G0 uses the configurable preview speed (default 1500 mm/min). Timing assumes constant speed without acceleration and an initial work position of X0 Y0 Z0 (Z zeroed on the material top). The simulation is a snapshot of the chosen selection or project.
 - **About SimpleCAM** in the toolbar, with credits, version and offline license notices.
 
 Toolpath edits leave the imported SVG geometry intact. For closed paths, the start can be anywhere along a segment; for open paths, choose either end.

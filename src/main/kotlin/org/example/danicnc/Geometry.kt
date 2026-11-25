@@ -90,6 +90,40 @@ class Contour(
         return if (pointCount == 1) hypot(x - pts[0], y - pts[1]) else best
     }
 
+    /** Целият контур е вътре в правоъгълника [r] (mm). */
+    fun isInside(r: Bounds): Boolean =
+        bounds.minX >= r.minX && bounds.maxX <= r.maxX && bounds.minY >= r.minY && bounds.maxY <= r.maxY
+
+    /** Някоя част от линията на контура лежи в правоъгълника [r] (mm) или го пресича. */
+    fun intersects(r: Bounds): Boolean {
+        val b = bounds
+        if (b.maxX < r.minX || b.minX > r.maxX || b.maxY < r.minY || b.minY > r.maxY) return false
+        if (isInside(r)) return true
+        if (pointCount == 1) return r.contains(pts[0], pts[1])
+        for (i in 1 until pointCount) {
+            if (segmentHitsRect(pts[2 * i - 2], pts[2 * i - 1], pts[2 * i], pts[2 * i + 1], r)) return true
+        }
+        return false
+    }
+
+    /** Liang–Barsky: има ли част от отсечката AB в правоъгълника. */
+    private fun segmentHitsRect(ax: Double, ay: Double, bx: Double, by: Double, r: Bounds): Boolean {
+        val dx = bx - ax; val dy = by - ay
+        var t0 = 0.0; var t1 = 1.0
+        val p = doubleArrayOf(-dx, dx, -dy, dy)
+        val q = doubleArrayOf(ax - r.minX, r.maxX - ax, ay - r.minY, r.maxY - ay)
+        for (k in 0..3) {
+            if (p[k] == 0.0) {
+                if (q[k] < 0) return false
+            } else {
+                val t = q[k] / p[k]
+                if (p[k] < 0) { if (t > t1) return false; if (t > t0) t0 = t }
+                else { if (t < t0) return false; if (t < t1) t1 = t }
+            }
+        }
+        return true
+    }
+
     private fun segDist(px: Double, py: Double, ax: Double, ay: Double, bx: Double, by: Double): Double {
         val dx = bx - ax; val dy = by - ay
         val l2 = dx * dx + dy * dy

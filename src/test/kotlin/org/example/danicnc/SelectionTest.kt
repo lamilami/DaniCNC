@@ -62,6 +62,17 @@ class SelectionTest {
         mouse(MouseEvent.MOUSE_RELEASED, to, button)
     }
 
+    /** Влачене с ляв бутон и модификатори; координатите са в mm (Y нагоре). */
+    private fun WorkArea.box(x0: Double, y0: Double, x1: Double, y1: Double,
+                             shift: Boolean = false, ctrl: Boolean = false, alt: Boolean = false) {
+        val pts = listOf(MouseEvent.MOUSE_PRESSED to mmToLocal(x0, y0),
+            MouseEvent.MOUSE_DRAGGED to mmToLocal(x1, y1), MouseEvent.MOUSE_RELEASED to mmToLocal(x1, y1))
+        for ((type, p) in pts) {
+            Event.fireEvent(this, MouseEvent(type, p.x, p.y, p.x, p.y, MouseButton.PRIMARY, 1,
+                shift, ctrl, alt, false, type != MouseEvent.MOUSE_RELEASED, false, false, true, false, true, null))
+        }
+    }
+
     private fun area(drawing: SvgDrawing) = WorkArea().apply {
         Scene(this, 1000.0, 700.0)
         resize(1000.0, 700.0); layout(); setDrawing(drawing)
@@ -347,5 +358,75 @@ class SelectionTest {
             type.value=CutType.ON_PATH
             assertArrayEquals(c.points,area.previewResult.paths.single().points)
         } finally { stage.close() }
+    }
+
+    // three_rects_open_line.svg в mm (Y нагоре): A x10..110 y80..130, B x130..190 y90..130,
+    // C x10..90 y30..60, D (отворена) x120..200 y30..60
+    @Test fun `box selection window crossing shift add and alt remove`() = onFx {
+        val area = area(SvgLoader.load(File("samples/three_rects_open_line.svg")))
+        fun ids() = area.selected.map { it.source }
+        area.box(0.0, 140.0, 115.0, 70.0)                // → Window: само изцяло обхванатият A
+        assertEquals(listOf("rect #A"), ids())
+        area.box(0.0, 140.0, 150.0, 70.0)                // → Window: B е само частично вътре
+        assertEquals(listOf("rect #A"), ids())
+        area.box(150.0, 70.0, 100.0, 140.0)              // ← Crossing: докоснатите A и B
+        assertEquals(listOf("rect #A", "path #B"), ids())
+        area.box(0.0, 65.0, 95.0, 25.0, shift = true)    // Shift + кутия добавя C
+        assertEquals(listOf("rect #A", "path #B", "polygon #C"), ids())
+        area.box(185.0, 85.0, 170.0, 100.0, alt = true)  // Alt + Crossing маха B
+        assertEquals(listOf("rect #A", "polygon #C"), ids())
+        area.click(160.0, 95.0)                          // обикновен клик върху D → само D
+        area.click(60.0, 10.0, ctrl = false)
+        area.box(160.0, 45.0, 160.0, 45.0, shift = true) // Shift + клик (без влачене) добавя D
+        assertEquals(listOf("rect #A", "polyline #D"), ids())
+        area.box(160.0, 45.0, 160.0, 45.0, shift = true) // втори Shift + клик го маха
+        assertEquals(listOf("rect #A"), ids())
+        area.box(150.0, 70.0, 155.0, 75.0)               // кутия в празно → изчиства
+        assertEquals(emptyList<String>(), ids())
+    }
+
+    @Test fun `ctrl z returns moved contours one move back`() = onFx {
+        val drawing = SvgLoader.load(File("samples/three_rects_open_line.svg"))
+        val area = area(drawing)
+        val a = drawing.contours.first()
+        val original = a.points.copyOf()
+        assertEquals(false, area.canUndoMove)
+        area.drag(area.mmToLocal(60.0, 80.0), area.mmToLocal(70.0, 100.0)) // влачене на A
+        assertEquals(20.0, a.bounds.minX, 1e-9); assertEquals(100.0, a.bounds.minY, 1e-9)
+        area.moveSelectionTo(0.0, 0.0)                                     // ръчно X/Y
+        area.clearSelection()
+        assertEquals(true, area.undoMove())
+        assertEquals(20.0, a.bounds.minX, 1e-9); assertEquals(100.0, a.bounds.minY, 1e-9)
+        assertEquals(listOf(a), area.selected)
+        assertEquals(true, area.undoMove())
+        assertArrayEquals(original, a.points, 1e-9)
+        assertEquals(false, area.undoMove())
+        assertEquals(false, area.canUndoMove)
+    }
+
+    @Test fun `space plus left drag pans without selecting or moving`() = onFx {
+        val drawing = SvgLoader.load(File("samples/three_rects_open_line.svg"))
+        val area = area(drawing)
+        val before = drawing.contours.map { it.points.copyOf() }
+        fun key(type: javafx.event.EventType<javafx.scene.input.KeyEvent>) =
+            Event.fireEvent(area, javafx.scene.input.KeyEvent(type, " ", " ",
+                javafx.scene.input.KeyCode.SPACE, false, false, false, false))
+        val start = area.mmToLocal(60.0, 80.0) // върху ръба на A
+        area.mouse(MouseEvent.MOUSE_MOVED, start)
+        key(javafx.scene.input.KeyEvent.KEY_PRESSED)
+        assertEquals(true, area.spacePanning)
+        val origin = area.mmToLocal(0.0, 0.0)
+        area.drag(start, start.add(25.0, -15.0))
+        assertEquals(origin.x + 25, area.mmToLocal(0.0, 0.0).x, 1e-9)
+        assertEquals(origin.y - 15, area.mmToLocal(0.0, 0.0).y, 1e-9)
+        assertEquals(emptyList<Contour>(), area.selected)
+        drawing.contours.forEachIndexed { i, c -> assertArrayEquals(before[i], c.points, 1e-12) }
+        area.mouse(MouseEvent.MOUSE_PRESSED, start); area.mouse(MouseEvent.MOUSE_RELEASED, start)
+        assertEquals(emptyList<Contour>(), area.selected) // клик със Space не избира
+        key(javafx.scene.input.KeyEvent.KEY_RELEASED)
+        assertEquals(false, area.spacePanning)
+        val onA = area.mmToLocal(60.0, 80.0) // след местенето A е на нова позиция на екрана
+        area.drag(onA, onA) // без Space кликът отново избира
+        assertEquals(listOf(drawing.contours.first()), area.selected)
     }
 }

@@ -8,20 +8,23 @@ class GCodeSimulationTest {
 
     @Test fun `timing follows XYZ distance rapid and modal feed in minutes`() {
         val model=GCodeSimulation.parse(program,1500.0)
-        assertEquals(5,model.moves.size)
-        assertEquals(2.0,model.moves[0].durationSeconds,1e-9)
-        assertEquals(3.5,model.moves[1].durationSeconds,1e-9)
-        assertEquals(5.0,model.moves[2].durationSeconds,1e-9)
-        assertEquals(3.0,model.moves[3].durationSeconds,1e-9)
-        assertEquals(0.28,model.moves[4].durationSeconds,1e-9)
-        assertEquals(13.78,model.totalSeconds,1e-9)
-        assertEquals(SimPosition(15.0,20.0,5.0),model.frame(1.0).position)
-        assertEquals(1.5,model.frame(3.75).position.z,1e-9)
-        assertEquals(SimPosition(45.0,60.0,-2.0),model.frame(8.0).position)
+        // Starts at X0 Y0 Z0 (Z zeroed on the material): the first move is the 5 mm lift.
+        assertEquals(6,model.moves.size)
+        assertEquals(0.2,model.moves[0].durationSeconds,1e-9)
+        assertEquals(2.0,model.moves[1].durationSeconds,1e-9)
+        assertEquals(3.5,model.moves[2].durationSeconds,1e-9)
+        assertEquals(5.0,model.moves[3].durationSeconds,1e-9)
+        assertEquals(3.0,model.moves[4].durationSeconds,1e-9)
+        assertEquals(0.28,model.moves[5].durationSeconds,1e-9)
+        assertEquals(13.98,model.totalSeconds,1e-9)
+        assertEquals(SimPosition(0.0,0.0,2.5),model.frame(0.1).position)
+        model.frame(1.2).position.let { assertEquals(15.0,it.x,1e-9); assertEquals(20.0,it.y,1e-9); assertEquals(5.0,it.z,1e-9) }
+        assertEquals(1.5,model.frame(3.95).position.z,1e-9)
+        model.frame(8.2).position.let { assertEquals(45.0,it.x,1e-9); assertEquals(60.0,it.y,1e-9); assertEquals(-2.0,it.z,1e-9) }
         assertEquals(SimPosition(90.0,80.0,5.0),model.frame(1000.0).position)
-        assertEquals(7,model.frame(0.0).move.line)
+        assertEquals(6,model.frame(0.0).move.line)
         assertTrue(model.frame(0.0).move.rapid)
-        assertFalse(model.frame(2.0).move.rapid)
+        assertFalse(model.frame(2.4).move.rapid)
     }
 
     @Test fun `play pause multipliers seek and replay never lose position`() {
@@ -68,7 +71,9 @@ class GCodeSimulationTest {
         c.cutSettings=CutSettings(type=CutType.POCKET,bitMm=2.0,depthMm=2.5,passDepthMm=1.0)
         val code=GCodeExporter.generate(listOf(c),listOf(c),ExportScope.SELECTED,true)
         val model=GCodeSimulation.parse(code,1500.0)
-        assertEquals(listOf(-1.0,-2.0,-2.5),model.moves.filter { it.from.z>it.to.z }.map { it.to.z })
+        assertEquals(listOf(-1.0,-2.0,-2.5),model.moves.filter { !it.rapid && it.from.z>it.to.z }.map { it.to.z })
+        // every plunge starts from Z0 directly above the start point, reached with G0
+        assertEquals(listOf(0.0,0.0,0.0),model.moves.filter { it.rapid && it.from.z>it.to.z }.map { it.to.z })
         assertEquals(5.0,model.frame(model.totalSeconds).position.z)
         assertTrue(model.moves.filter { !it.rapid }.all { it.rateMmMin==200.0 || it.rateMmMin==600.0 })
     }

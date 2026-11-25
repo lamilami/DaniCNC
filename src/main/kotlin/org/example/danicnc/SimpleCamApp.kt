@@ -20,6 +20,7 @@ import javafx.scene.control.TableCell
 import javafx.scene.control.TableColumn
 import javafx.scene.control.TableView
 import javafx.scene.control.ToolBar
+import javafx.scene.control.Tooltip
 import javafx.scene.control.ButtonType
 import javafx.scene.control.Menu
 import javafx.scene.control.MenuBar
@@ -65,6 +66,8 @@ class SimpleCamApp : Application() {
     private var unsavedChanges = false
     private var installingProject = false
     private var syncWorkspaceControls: () -> Unit = {}
+    /** Safe travel height above Z0 (material top), mm. Saved with the project. */
+    private var safeZMm = GCodeExporter.DEFAULT_SAFE_Z_MM
     private lateinit var stage: Stage
     private val aboutDialog = AboutSimpleCam { hostServices.showDocument(it) }
 
@@ -95,6 +98,20 @@ class SimpleCamApp : Application() {
             id = "previewToggle"; isSelected = workArea.previewVisible
             setOnAction { workArea.previewVisible = isSelected; markProjectChanged() }
         }
+        val safeZ = TextField(safeZMm.toString()).apply {
+            id = "safeZ"; prefColumnCount = 4
+            tooltip = Tooltip("Safe travel height above the material top (Z0).\n" +
+                "The cutter moves between cuts at this height and drops to Z0 at each start point.")
+            fun commit() {
+                val v = text.trim().replace(',', '.').toDoubleOrNull()
+                if (v != null && runCatching { GCodeExporter.validateSafeZ(v) }.isSuccess) {
+                    if (v != safeZMm) { safeZMm = v; markProjectChanged() }
+                    text = safeZMm.toString(); style = ""
+                } else style = "-fx-border-color: #d32f2f;"
+            }
+            setOnAction { commit() }
+            focusedProperty().addListener { _, _, focused -> if (!focused) commit() }
+        }
         workArea.onPreviewChanged = { result ->
             markProjectChanged()
             previewStatus.text = if (result.warnings.isEmpty()) "Toolpath: ${result.paths.size} XY path(s) — cutter centre"
@@ -104,13 +121,14 @@ class SimpleCamApp : Application() {
             snap.isSelected=workArea.snapToGrid
             grid.value=workArea.gridStep
             preview.isSelected=workArea.previewVisible
+            safeZ.text=safeZMm.toString(); safeZ.style=""
         }
         val aboutBtn = Button("About SimpleCAM").apply {
             id = "aboutSimpleCAM"
             setOnAction { aboutDialog.show(stage) }
         }
         val toolBar = ToolBar(openBtn, openProjectBtn, saveProjectBtn, exportBtn, simulateBtn, fitBtn, Separator(), clearBtn, Separator(), preview, snap,
-            Label("Grid, mm:"), grid, Separator(), sizeLabel, Separator(), aboutBtn)
+            Label("Grid, mm:"), grid, Separator(), Label("Safe Z, mm:"), safeZ, Separator(), sizeLabel, Separator(), aboutBtn)
 
         val spacer = Region().also { HBox.setHgrow(it, Priority.ALWAYS) }
         val statusBar = HBox(16.0, fileLabel, docLabel, countLabel, spacer, cursorLabel, zoomLabel).apply {
@@ -146,7 +164,7 @@ class SimpleCamApp : Application() {
         val table = TableView(selRows).apply {
             prefHeight = 120.0
             minHeight = 90.0
-            placeholder = Label("Click a contour to select it.\nCtrl + Click to add or remove.").apply {
+            placeholder = Label("Click a contour to select it.\nShift/Ctrl + Click to add or remove.\nDrag a box: → enclosed, ← touched.").apply {
                 style = "-fx-text-fill: #78909c;"
             }
             columnResizePolicy = TableView.CONSTRAINED_RESIZE_POLICY_FLEX_LAST_COLUMN
@@ -265,6 +283,10 @@ class SimpleCamApp : Application() {
                 item("Open SVG…","Shortcut+Shift+O",::openSvg),SeparatorMenuItem(),
                 item("Save Project","Shortcut+S") { saveProject() },
                 item("Save Project As…","Shortcut+Shift+S") { saveProject(true) })
+        }, Menu("Edit").apply {
+            val undo=item("Undo Move","Shortcut+Z") { workArea.undoMove() }.apply { id="undoMove"; isDisable=!workArea.canUndoMove }
+            workArea.onUndoAvailabilityChanged={ undo.isDisable=!it }
+            items.add(undo)
         })
     }
 
@@ -290,7 +312,7 @@ class SimpleCamApp : Application() {
 
     internal fun saveProjectTo(file: File) {
         val drawing=requireNotNull(workArea.projectDrawing) { "Open an SVG or project first." }
-        ProjectIO.save(file.toPath(),ProjectState(drawing,sourceName,workArea.gridStep,workArea.snapToGrid,workArea.previewVisible))
+        ProjectIO.save(file.toPath(),ProjectState(drawing,sourceName,workArea.gridStep,workArea.snapToGrid,workArea.previewVisible,safeZMm))
         projectFile=file; lastDir=file.absoluteFile.parentFile
         fileLabel.text=file.name
         unsavedChanges=false; updateProjectTitle()
@@ -343,7 +365,7 @@ class SimpleCamApp : Application() {
         }.showAndWait().orElse(null) ?: return
         try {
             // Validate all operations before presenting a destination or touching any file.
-            val program = GCodeExporter.generate(workArea.projectContours,workArea.selected,scope,workArea.previewVisible)
+            val program = GCodeExporter.generate(workArea.projectContours,workArea.selected,scope,workArea.previewVisible,safeZMm)
             val chooser = FileChooser().apply {
                 title = "Save GRBL G-code"
                 extensionFilters.add(FileChooser.ExtensionFilter("GRBL G-code (*.nc)","*.nc"))
@@ -353,7 +375,7 @@ class SimpleCamApp : Application() {
             val chosen = chooser.showSaveDialog(stage) ?: return
             val file = if (chosen.extension.equals("nc",true)) chosen else File(chosen.parentFile,chosen.name + ".nc")
             GCodeExporter.writeProgram(file.toPath(),program)
-            Alert(Alert.AlertType.INFORMATION,"Saved ${file.name}\nZ0 = material top. Verify Z+5 retract height for your setup.").apply {
+            Alert(Alert.AlertType.INFORMATION,"Saved ${file.name}\nZ0 = material top at each cut's start point. Travel height Z+${mm(safeZMm)} — verify it for your setup.").apply {
                 initOwner(stage); headerText = "G-code exported"
             }.showAndWait()
         } catch (e: Exception) {
@@ -368,7 +390,7 @@ class SimpleCamApp : Application() {
             initOwner(stage); title="Simulate G-code"; headerText="Choose simulation scope"; contentText="Scope:"
         }.showAndWait().orElse(null) ?: return
         try {
-            val program=GCodeExporter.generate(workArea.projectContours,workArea.selected,scope,workArea.previewVisible)
+            val program=GCodeExporter.generate(workArea.projectContours,workArea.selected,scope,workArea.previewVisible,safeZMm)
             val pane=GCodeSimulationPane(program)
             Stage().apply {
                 initOwner(stage)
@@ -400,6 +422,7 @@ class SimpleCamApp : Application() {
                 workArea.snapToGrid=project.snapToGrid
                 workArea.gridStep=project.gridStep
                 workArea.previewVisible=project.previewVisible
+                safeZMm=project.safeZMm
                 workArea.setDrawing(d)
                 syncWorkspaceControls()
             } finally { installingProject=false }

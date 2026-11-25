@@ -173,4 +173,30 @@ class GCodeExporterTest {
         Files.createDirectories(Path.of("target"))
         Files.writeString(Path.of("target/task8-outside-40x30-6mm.nc"),code)
     }
+
+    @Test fun `travel at safe Z then drop to Z0 at each start point and closed passes plunge in place`() {
+        val a=rectangle(1); val b=rectangle(2,x=80.0)
+        settings(a); settings(b)
+        val code=GCodeExporter.generate(listOf(a,b),emptyList(),ExportScope.ENTIRE_PROJECT,true,safeZMm=12.5)
+        val lines=code.lines().filter { it.isNotBlank() && !it.startsWith("(") }
+        // Lift first, before any XY move, wherever Z was zeroed.
+        assertEquals("G0 Z12.5",lines.first { it.startsWith("G0 ") || it.startsWith("G1 ") })
+        var z=Double.NaN
+        val starts=mutableListOf<Pair<Double,Double>>()
+        var xy=0.0 to 0.0
+        for ((i,line) in lines.withIndex()) {
+            val w=words(line)
+            if (line.startsWith("G0 X")) { assertEquals(12.5,z); xy=w.getValue("X") to w.getValue("Y") }
+            if (line=="G0 Z0") { starts+=xy; assertTrue(lines[i+1].startsWith("G1 Z-")) }
+            w["Z"]?.let { z=it }
+        }
+        // one approach to Z0 per contour, at the first point of its toolpath; passes 2..3 plunge in place
+        val paths=ToolpathPreview.calculate(listOf(a,b)).paths
+        assertEquals(paths.map { it.points[0] to it.points[1] },starts)
+        assertEquals(6,lines.count { it.startsWith("G1 Z-") })
+        assertTrue(code.endsWith("G0 Z12.5\nM5\nM2\n"))
+        for (bad in listOf(0.0,0.2,Double.NaN,101.0)) assertThrows(IllegalArgumentException::class.java) {
+            GCodeExporter.generate(listOf(a),emptyList(),ExportScope.ENTIRE_PROJECT,true,safeZMm=bad)
+        }
+    }
 }
